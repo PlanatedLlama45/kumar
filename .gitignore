@@ -1,0 +1,6 @@
+build/*
+!build/*.exe
+.vscode/*
+*.zip
+*.rar
+dependencies/*
