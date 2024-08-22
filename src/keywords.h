@@ -10,8 +10,10 @@
 #define KEYWORD_IF       "if"
 #define KEYWORD_THEN     "then"
 #define KEYWORD_ENDIF    "endif"
-#define KEYWORD_LOOP     "loop while"
+#define KEYWORD_LOOP     "loop"
+#define KEYWORD_WHILE    "while"
 #define KEYWORD_ENDLOOP  "endloop"
+#define KEYWORD_EXITLOOP "break"
 
 #define KEYWORD_NOT      "not"
 #define KEYWORD_AND      "and"
@@ -43,8 +45,10 @@
 #define KEYWORD_IF       "если"
 #define KEYWORD_THEN     "то"
 #define KEYWORD_ENDIF    "все"
-#define KEYWORD_LOOP     "нц пока"
+#define KEYWORD_LOOP     "нц"
+#define KEYWORD_WHILE    "пока"
 #define KEYWORD_ENDLOOP  "кц"
+#define KEYWORD_EXITLOOP "прервать"
 
 #define KEYWORD_NOT      "не"
 #define KEYWORD_AND      "и"
@@ -68,6 +72,8 @@
 #define KEYWORD_CHECK_RIGHT  "справа"
 
 #endif // LANG_RU
+
+#define KEYWORD_LOOP_WHILE KEYWORD_LOOP" "KEYWORD_WHILE
 
 #define KEYWORD_CHECK_UP_FULL     KEYWORD_CHECK_UP" "KEYWORD_CHECK_CLEAR
 #define KEYWORD_CHECK_DOWN_FULL   KEYWORD_CHECK_DOWN" "KEYWORD_CHECK_CLEAR

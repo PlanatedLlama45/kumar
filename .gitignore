@@ -1,6 +1,7 @@
 build/*
-!build/*.exe
 .vscode/*
 *.zip
 *.rar
 dependencies/*
+*.kum
+*.kum_grid

@@ -29,7 +29,31 @@ FILE *openFile(const char *filename) {
     return file;
 }
 
-#define SECONDS_PER_LINE_CYCLE 0.1
+Grid makeGrid() {
+    return (Grid){
+        .width = 15,
+        .height = 15,
+        .cellSize = 50,
+        .backgroundColor = GREEN,
+        .filledBackgroundColor = PURPLE,
+        .wallColor = GRAY,
+        .gridColor = YELLOW,
+        .data = NULL
+    };
+}
+
+Robot makeRobot() {
+    return (Robot){
+        .posX = 0,
+        .posY = 0,
+        .size = 15,
+        .color = GRAY,
+        .innerSize = 10,
+        .innerColor = LIGHTGRAY
+    };
+}
+
+#define SECONDS_PER_STEP_DEFAULT 0.05
 
 int runProgram(int argc, const char **argv) {
     if (argc == 1) {
@@ -40,37 +64,26 @@ int runProgram(int argc, const char **argv) {
         return -1;
     }
     FILE *file = openFile(argv[1]);
-// #ifdef LANG_RU
-//     FILE *file = openFile("test");
-// #endif // LANG_RU
-
-// #ifdef LANG_EN
-//     FILE *file = openFile("test2");
-// #endif // LANG_EN
     if (file == NULL) return EXIT_FAILURE;
 
-    Grid grid = (Grid){
-        .width = 15,
-        .height = 15,
-        .cellSize = 50,
-        .backgroundColor = GREEN,
-        .filledBackgroundColor = PURPLE,
-        .wallColor = GRAY,
-        .gridColor = YELLOW,
-        .data = NULL
-    };
-    if (loadGridFromFile(&grid, argv[2]) == EXIT_FAILURE) return EXIT_FAILURE;
+    Grid grid = makeGrid();
+    Robot robot = makeRobot();
 
-    Robot robot = (Robot){
-        .posX = 7,
-        .posY = 7,
-        .size = 15,
-        .color = GRAY,
-        .innerSize = 10,
-        .innerColor = LIGHTGRAY
-    };
+    if (loadGridFromFile(&grid, argv[2], &robot.posX, &robot.posY) == EXIT_FAILURE) return EXIT_FAILURE;
 
     initInterpreter(&robot, &grid);
+
+    float secondsPerLineCycle;
+    bool isInstant = false;
+    if (argc == 3)
+        secondsPerLineCycle = SECONDS_PER_STEP_DEFAULT;
+    else {
+        secondsPerLineCycle = atof(argv[3]);
+        if (secondsPerLineCycle > 0.f)
+            secondsPerLineCycle = 1.f / secondsPerLineCycle;
+        else
+            isInstant = true;
+    }
 
     size_t currentLine = 0;
     float secondsSinceLineCycle = 0;
@@ -82,9 +95,9 @@ int runProgram(int argc, const char **argv) {
 
     while (!WindowShouldClose()) {
         if (interpreterRunning) {
-            if (!skipNextLineDelay)
+            if (!isInstant && !skipNextLineDelay)
                 secondsSinceLineCycle += GetFrameTime();
-            if (skipNextLineDelay || secondsSinceLineCycle >= SECONDS_PER_LINE_CYCLE) {
+            if (isInstant || skipNextLineDelay || secondsSinceLineCycle >= secondsPerLineCycle) {
                 skipNextLineDelay = false;
                 // printf(" -=- Line: %llu -=-\n", currentLine + 1);
                 interpreterCode = interpretLine(file, &currentLine);
@@ -106,12 +119,16 @@ int runProgram(int argc, const char **argv) {
             drawRobot(robot, grid, SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
+    freeInterpreter();
 
     CloseWindow();
 
     fclose(file);
     return EXIT_SUCCESS;
 }
+
+#define ROBOT_HOLD_SCALE_FACTOR 1.2f
+#define ROBOT_HOLD_ALPHA 200
 
 int runGridEditor(int argc, const char **argv) {
     if (argc == 1) {
@@ -125,57 +142,98 @@ int runGridEditor(int argc, const char **argv) {
         return EXIT_FAILURE;
     }
 
-    Grid grid = (Grid){
-        .width = 15,
-        .height = 15,
-        .cellSize = 50,
-        .backgroundColor = GREEN,
-        .filledBackgroundColor = PURPLE,
-        .wallColor = GRAY,
-        .gridColor = YELLOW,
-        .data = NULL
-    };
+    Grid grid = makeGrid();
+    Robot robot = makeRobot();
 
-    generateGridData(&grid);
+    if (FileExists(filename))
+        loadGridFromFile(&grid, filename, &robot.posX, &robot.posY);
+    else
+        generateGridData(&grid);
 
     int selectedX, selectedY;
+    bool holdingRobot = false;
 
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Kumar (grid editor)");
 
     while (!WindowShouldClose()) {
+        getGridMousePos(grid, &selectedX, &selectedY, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            getGridMousePos(grid, &selectedX, &selectedY, SCREEN_WIDTH, SCREEN_HEIGHT);
-            if (selectedX != -1)
-                setGridCell(&grid, selectedX, selectedY, CELL_WALL);
-        } else if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
-            getGridMousePos(grid, &selectedX, &selectedY, SCREEN_WIDTH, SCREEN_HEIGHT);
-            if (selectedX != -1)
-                setGridCell(&grid, selectedX, selectedY, CELL_FILLED);
+        if (selectedX != robot.posX || selectedY != robot.posY) {
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                if (selectedX != -1) {
+                    if (getGridCell(grid, selectedX, selectedY) != GRID_CELL_WALL)
+                        setGridCell(&grid, selectedX, selectedY, GRID_CELL_WALL);
+                    else
+                        setGridCell(&grid, selectedX, selectedY, GRID_CELL_EMPTY);
+                }
+            } else if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+                if (selectedX != -1) {
+                    if (getGridCell(grid, selectedX, selectedY) != GRID_CELL_FILLED)
+                        setGridCell(&grid, selectedX, selectedY, GRID_CELL_FILLED);
+                    else
+                        setGridCell(&grid, selectedX, selectedY, GRID_CELL_EMPTY);
+                }
+            }
+        } else if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            if (!holdingRobot) {
+                robot.color.a = ROBOT_HOLD_ALPHA;
+                robot.innerColor.a = ROBOT_HOLD_ALPHA;
+                robot.innerSize *= ROBOT_HOLD_SCALE_FACTOR;
+                robot.size *= ROBOT_HOLD_SCALE_FACTOR;
+            }
+            holdingRobot = true;
+        } if (holdingRobot) {
+            robotSetPos(&robot, grid, selectedX, selectedY);
+            if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+                holdingRobot = false;
+                robot.color.a = 255;
+                robot.innerColor.a = 255;
+                robot.innerSize /= ROBOT_HOLD_SCALE_FACTOR;
+                robot.size /= ROBOT_HOLD_SCALE_FACTOR;
+            }
         }
 
         BeginDrawing();
             ClearBackground(BLACK);
             drawGrid(grid, SCREEN_WIDTH, SCREEN_HEIGHT);
+            drawRobot(robot, grid, SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
 
     CloseWindow();
-    dumpGrid(grid, filename);
+    dumpGrid(grid, filename, robot.posX, robot.posY);
 
     return EXIT_SUCCESS;
 }
+
+/*
+ * 
+ * Синтаксис:
+ *   Изменить поле:     kumar grid <файл поля>
+ *   Запустить файл:    kumar run <файл> <файл поля> [шагов в секунду > 0 (если <= 0, то мгновенно), если не указано, то 20 шагов в секунду]
+ * 
+*/
 
 int main(int argc, const char **argv) {
     if (argc == 1) {
         puts("Not enough arguments");
         return EXIT_FAILURE;
     }
-    if (streq(argv[1], "-run"))
-        return runProgram(argc - 1, argv + 1);
-    if (streq(argv[1], "-grid"))
-        return runGridEditor(argc - 1, argv + 1);
-    
+    if (streq(argv[1], "run")) {
+        if (runProgram(argc - 1, argv + 1) == EXIT_FAILURE) {
+            puts("Unexpected error");
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+    if (streq(argv[1], "grid")) {
+        if (runGridEditor(argc - 1, argv + 1) == EXIT_FAILURE) {
+            puts("Unexpected error");
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
     puts("Unexpected token at position 1");
     return EXIT_FAILURE;
 }

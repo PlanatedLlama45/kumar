@@ -9,9 +9,10 @@
 #define mallocT(T) (T *)malloc(sizeof(T))
 
 typedef enum {
-    CELL_EMPTY,
-    CELL_FILLED,
-    CELL_WALL
+    GRID_CELL_NONE,
+    GRID_CELL_EMPTY,
+    GRID_CELL_FILLED,
+    GRID_CELL_WALL
 } CellType;
 
 typedef struct Grid {
@@ -30,20 +31,31 @@ void generateGridData(Grid *grid) {
     for (int x = 0; x < grid->width; x++) {
         grid->data[x] = nmallocT(CellType, grid->height);
         for (int y = 0; y < grid->height; y++)
-            grid->data[x][y] = CELL_EMPTY;
+            grid->data[x][y] = GRID_CELL_EMPTY;
     }
 }
 
 void setGridCell(Grid *grid, int x, int y, CellType value) {
+    if (x < 0 || x >= grid->width || y < 0 || y >= grid->height) {
+        printf("Index out of bounds: x = %d, y = %d\n", x, y);
+        return;
+    }
     grid->data[x][y] = value;
 }
 
+CellType getGridCell(Grid grid, int x, int y) {
+    if (x < 0 || x >= grid.width || y < 0 || y >= grid.height)
+        return GRID_CELL_NONE;
+    return grid.data[x][y];
+}
+
 bool isGridCellWall(Grid grid, int x, int y) {
-    return (x < 0 || x >= grid.width || y < 0 || y >= grid.height || grid.data[x][y] == CELL_WALL);
+    CellType cell = getGridCell(grid, x, y);
+    return cell == GRID_CELL_WALL || cell == GRID_CELL_NONE;
 }
 
 #define FILENAME_MAX_LENGTH 128
-#define GRID_EXTENSION "kum.grid"
+#define GRID_EXTENSION "kum_grid"
 
 bool streq(const char *str1, const char *str2) {
     return !strcmp(str1, str2);
@@ -59,7 +71,7 @@ char *getFileExt(char *filename) {
     return ext;
 }
 
-int loadGridFromFile(Grid *grid, const char *filename) {
+int loadGridFromFile(Grid *grid, const char *filename, int *robotPosX, int *robotPosY) {
     char *m_filename = strdup(filename);
     char *fileExt = getFileExt(m_filename);
     if (fileExt[0] == '\0' || !streq(fileExt, GRID_EXTENSION)) {
@@ -73,7 +85,7 @@ int loadGridFromFile(Grid *grid, const char *filename) {
         return EXIT_FAILURE;
     }
 
-    FILE *file = fopen(filename, "r");
+    FILE *file = fopen(filename, "rb");
 
     if (file == NULL) {
         puts("Failed to open file");
@@ -82,21 +94,17 @@ int loadGridFromFile(Grid *grid, const char *filename) {
 
     generateGridData(grid);
 
-    char line[25],
-         xStr[11] = { '\0' },
-         yStr[11] = { '\0' };
-    size_t i, j;
+    fread(robotPosX, sizeof(int), 1, file);
+    fread(robotPosY, sizeof(int), 1, file);
 
+    int x, y;
+    CellType type;
     while (!feof(file)) {
-        fgets(line, 25, file);
-
-        for (i = 2; line[i] != ';'; i++)
-            xStr[i - 2] = line[i];
-        for (j = ++i; j < strlen(line); j++)
-            yStr[j - i] = line[j];
+        fread(&type, sizeof(CellType), 1, file);
+        fread(&x, sizeof(int), 1, file);
+        fread(&y, sizeof(int), 1, file);
         
-        printf("%d, %d: %c\n", atoi(xStr), atoi(yStr), line[0]);
-        setGridCell(grid, atoi(xStr), atoi(yStr), line[0] - '0');
+        setGridCell(grid, x, y, type);
     }
 
     fclose(file);
@@ -104,10 +112,10 @@ int loadGridFromFile(Grid *grid, const char *filename) {
 }
 
 void flipGridColor(Grid *grid, int x, int y) {
-    if (grid->data[x][y] == CELL_EMPTY)
-        grid->data[x][y] = CELL_FILLED;
-    else if (grid->data[x][y] == CELL_FILLED)
-        grid->data[x][y] = CELL_EMPTY;
+    if (grid->data[x][y] == GRID_CELL_EMPTY)
+        grid->data[x][y] = GRID_CELL_FILLED;
+    else if (grid->data[x][y] == GRID_CELL_FILLED)
+        grid->data[x][y] = GRID_CELL_EMPTY;
 }
 
 void drawGrid(Grid grid, int screenWidth, int screenHeight) {
@@ -120,11 +128,11 @@ void drawGrid(Grid grid, int screenWidth, int screenHeight) {
     Color cellColor;
     for (int x = 0, xPos = xMin; x < grid.width; x++, xPos+=grid.cellSize) {
         for (int y = 0, yPos = yMin; y < grid.height; y++, yPos+=grid.cellSize) {
-            if (grid.data[x][y] == CELL_EMPTY)
+            if (grid.data[x][y] == GRID_CELL_EMPTY)
                 cellColor = grid.backgroundColor;
-            else if (grid.data[x][y] == CELL_FILLED)
+            else if (grid.data[x][y] == GRID_CELL_FILLED)
                 cellColor = grid.filledBackgroundColor;
-            else if (grid.data[x][y] == CELL_WALL)
+            else if (grid.data[x][y] == GRID_CELL_WALL)
                 cellColor = grid.wallColor;
             DrawRectangle(xPos, yPos, grid.cellSize, grid.cellSize, cellColor);
         }
@@ -167,15 +175,23 @@ void getGridMousePos(Grid grid, int *x, int *y, int screenWidth, int screenHeigh
     }
 }
 
-void dumpGrid(Grid grid, const char *filename) {
-    FILE *file = fopen(filename, "w");
+void dumpGrid(Grid grid, const char *filename, int robotPosX, int robotPosY) {
+    FILE *file = fopen(filename, "wb");
+
+    fwrite(&robotPosX, sizeof(int), 1, file);
+    fwrite(&robotPosY, sizeof(int), 1, file);
 
     for (int x = 0; x < grid.width; x++) {
         for (int y = 0; y < grid.height; y++) {
-            if (grid.data[x][y] != CELL_EMPTY)
-                fprintf(file, "%d;%d;%d", grid.data[x][y], x, y);
+            if (grid.data[x][y] != GRID_CELL_EMPTY && grid.data[x][y] != GRID_CELL_NONE) {
+                fwrite(&grid.data[x][y], sizeof(CellType), 1, file);
+                fwrite(&x, sizeof(int), 1, file);
+                fwrite(&y, sizeof(int), 1, file);
+            }
         }
     }
+
+    fclose(file);
 }
 
 
